@@ -615,7 +615,7 @@ class ProjectSerializer(serializers.HyperlinkedModelSerializer):
         cust_array=[]
         for project_entity in project_entities:
             if project_entity and project_entity.primary_contact:
-                cust_array.append(f"https://portolauatapi.azurewebsites.net/api/users/{project_entity.primary_contact.id}")
+                cust_array.append(f"https://portolaprod.azurewebsites.net/api/users/{project_entity.primary_contact.id}")
             else:
                 continue
         return cust_array
@@ -645,7 +645,7 @@ class ProjectSerializer(serializers.HyperlinkedModelSerializer):
             project_entity = ProjectEntity.objects.filter(project__id=obj.id)
             cust_arry = []
             for pe in project_entity:
-                cust_arry.append(f"https://portolauatapi.azurewebsites.net/api/users/{pe.document_approver.id}")
+                cust_arry.append(f"https://portolaprod.azurewebsites.net/api/users/{pe.document_approver.id}")
             return cust_arry
         except Exception as e:
             return []
@@ -1037,7 +1037,7 @@ class ProjectTemplateSerializer(serializers.HyperlinkedModelSerializer):
         try:
             project_entities = ProjectEntityTemplate.objects.filter(projecttemplate_id=obj.id)
             cust_array = [
-                f"https://portolauatapi.azurewebsites.net/api/entities/{pe.customer.id}"
+                f"https://portolaprod.azurewebsites.net/api/entities/{pe.customer.id}"
                 for pe in project_entities if pe.customer
             ]
             return cust_array
@@ -1121,7 +1121,7 @@ class ProjectTemplateSerializer(serializers.HyperlinkedModelSerializer):
         cust_array=[]
         for project_entity in project_entities:
             if project_entity and project_entity.primary_contact:
-                cust_array.append(f"https://portolauatapi.azurewebsites.net/api/users/{project_entity.primary_contact.id}")
+                cust_array.append(f"https://portolaprod.azurewebsites.net/api/users/{project_entity.primary_contact.id}")
             else:
                 continue
         return cust_array
@@ -1153,7 +1153,7 @@ class ProjectTemplateSerializer(serializers.HyperlinkedModelSerializer):
             project_entity = ProjectEntityTemplate.objects.filter(projecttemplate__id=obj.id)
             cust_arry = []
             for pe in project_entity:
-                cust_arry.append(f"https://portolauatapi.azurewebsites.net/api/users/{pe.document_approver.id}")
+                cust_arry.append(f"https://portolaprod.azurewebsites.net/api/users/{pe.document_approver.id}")
             return cust_arry
         except Exception as e:
             return []
