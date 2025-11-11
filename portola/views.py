@@ -47,6 +47,8 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.writer.excel import save_virtual_workbook
 from io import BytesIO
 import pandas as pd
+from rest_framework.exceptions import ValidationError
+
 
 
 DAYS_NEW=30
@@ -776,7 +778,7 @@ class ProfileViewSet(LoggingMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
-class ProjectViewSet(DetailSerializerMixin, LoggingMixin, viewsets.ModelViewSet):
+class ProjectViewSet(DetailSerializerMixin,LoggingMixin,viewsets.ModelViewSet):
     """
     This viewset automatically provides `list`, `create`, `retrieve`,
     `update` and `destroy` actions.
@@ -876,16 +878,15 @@ class ProjectViewSet(DetailSerializerMixin, LoggingMixin, viewsets.ModelViewSet)
     def perform_create(self, serializer):
         instance = serializer.save()
         customers_raw = self.request.data.get('customers', [])
+
         if isinstance(customers_raw, str):
             try:
                 customers = json.loads(customers_raw)
             except Exception as e:
-                return Response(
-                    {"error": f"Error parsing customers JSON: {str(e)}"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                raise ValidationError({"error": f"Error parsing customers JSON: {str(e)}"})
         else:
             customers = customers_raw
+
         for customer in customers:
             try:
                 ProjectEntity.objects.create(
@@ -895,7 +896,7 @@ class ProjectViewSet(DetailSerializerMixin, LoggingMixin, viewsets.ModelViewSet)
                     primary_contact_id=customer.get('primary_contact_id'),
                 )
             except Exception as e:
-                return Response({"error": f"Error creating ProjectEntity: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+                raise ValidationError({"error": f"Error creating ProjectEntity: {str(e)}"})
 
     def retrieve(self, request, *args, **kwargs):
         try:
@@ -1337,11 +1338,17 @@ class ProjectTemplateViewSet(viewsets.ModelViewSet):
             customers = customers_raw
         for customer in customers:
             try:
+                customer_id=customer.get('customer_id')
+                document_approver_id=customer.get('document_approver_id')
+                primary_contact_id=customer.get('primary_contact_id')
+
+                print(customer_id,document_approver_id,primary_contact_id)
+
                 ProjectEntityTemplate.objects.create(
                     projecttemplate_id=instance.id,
-                    customer_id=customer.get('customer_id'),
-                    document_approver_id=customer.get('document_approver_id'),
-                    primary_contact_id=customer.get('primary_contact_id')
+                    customer_id=int(customer_id),
+                    document_approver_id=int(document_approver_id),
+                    primary_contact_id=int(primary_contact_id)
                 )
             except Exception as e:
                 return Response({"error": f"Error creating ProjectEntityTemplate: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
