@@ -614,10 +614,25 @@ class EntityViewSet(LoggingMixin, viewsets.ModelViewSet):
             if not ids:
                 return Response({"detail": "Please provide entity IDs via ?ids=42,45"}, status=400)
             entity_ids = [int(i) for i in ids.split(',') if i.isdigit()]
-            approver_ids = ProjectEntity.objects.filter(customer_id__in=entity_ids).values_list('document_approver_id', flat=True).distinct()
-            users = User.objects.filter(id__in=approver_ids)
-            serializer = DocumentApproverSerializer(users, many=True, context={'request': request})
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            entities = Entity.objects.filter(id__in=entity_ids)
+            users = User.objects.filter(profile__entity__in=entity_ids).distinct()
+            grouped = {
+                entity.id: {
+                    "customer_id": entity.id,
+                    "customer_name": entity.legal_name,
+                    "users": []
+                } 
+                for entity in entities
+            }
+            for user_obj in users:
+                entity = getattr(user_obj.profile, 'entity', None)
+                if not entity:
+                    continue
+                user_data = DocumentApproverSerializer(user_obj, context={'request': request}).data
+                if entity.id in grouped:
+                    grouped[entity.id]["users"].append(user_data)
+            result = list(grouped.values())
+            return Response(result, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"detail": str(e)},status=status.HTTP_400_BAD_REQUEST)
 
@@ -860,20 +875,52 @@ class ProjectViewSet(DetailSerializerMixin, LoggingMixin, viewsets.ModelViewSet)
 
     def perform_create(self, serializer):
         instance = serializer.save()
-
-        document_approver_id = instance.document_approver.id
-        customers = self.request.data.get('customer', []) 
-        customer_ids = [
-        url.rstrip('/').split('/')[-1] for url in customers]
-        for customer_id in customer_ids:
+        customers_raw = self.request.data.get('customers', [])
+        if isinstance(customers_raw, str):
+            try:
+                customers = json.loads(customers_raw)
+            except Exception as e:
+                return Response(
+                    {"error": f"Error parsing customers JSON: {str(e)}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            customers = customers_raw
+        for customer in customers:
             try:
                 ProjectEntity.objects.create(
                     project_id=instance.id,
-                    customer_id=int(customer_id),
-                    document_approver_id=document_approver_id,
+                    customer_id=customer.get('customer_id'),
+                    document_approver_id=customer.get('document_approver_id'),
+                    primary_contact_id=customer.get('primary_contact_id'),
                 )
             except Exception as e:
-                print("Error creating ProjectEntity:", e)
+                return Response({"error": f"Error creating ProjectEntity: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+    def retrieve(self, request, *args, **kwargs):
+        try:
+            project_id = kwargs.get('pk')  
+            project = Project.objects.get(id=project_id)
+            serializer = ProjectSerializer(
+                project,
+                context={'request': request}
+            )
+            return Response(serializer.data)
+        except:
+            return None
+        
+    @action(detail=False, methods=['get'])
+    def get_projects(self,request):
+        entity_id = request.query_params.get('entity_id')
+        projectentity = ProjectEntity.objects.filter(customer_id=entity_id).values_list('project_id', flat=True)
+        projects = Project.objects.filter(id__in=projectentity)
+
+        serializer = ProjectSerializer(
+            projects,
+            many=True,
+            context={'request': request}
+        )
+        return Response(serializer.data)
         
 
 class PVModelViewSet(LoggingMixin, viewsets.ModelViewSet):
@@ -1274,6 +1321,44 @@ class DocumentTemplateViewSet(viewsets.ModelViewSet):
 class ProjectTemplateViewSet(viewsets.ModelViewSet):
     queryset=ProjectTemplate.objects.all()
     serializer_class=ProjectTemplateSerializer
+    
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        customers_raw = self.request.data.get('customers', [])
+        if isinstance(customers_raw, str):
+            try:
+                customers = json.loads(customers_raw)
+            except Exception as e:
+                return Response(
+                    {"error": f"Error parsing customers JSON: {str(e)}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            customers = customers_raw
+        for customer in customers:
+            try:
+                ProjectEntityTemplate.objects.create(
+                    projecttemplate_id=instance.id,
+                    customer_id=customer.get('customer_id'),
+                    document_approver_id=customer.get('document_approver_id'),
+                    primary_contact_id=customer.get('primary_contact_id')
+                )
+            except Exception as e:
+                return Response({"error": f"Error creating ProjectEntityTemplate: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+    # def retrieve(self, request, *args, **kwargs):
+    #     try:
+    #         project_id = kwargs.get('pk')  
+    #         project_template = ProjectTemplate.objects.get(id=project_id)
+    #         serializer = ProjectTemplateSerializer(
+    #             project_template,
+    #             context={'request': request}
+    #         )
+    #         return Response(serializer.data)
+    #     except:
+    #         return None
+        
+        
 
 class EntityTemplateViewSet(viewsets.ModelViewSet):
     queryset=EntityTemplate.objects.all()

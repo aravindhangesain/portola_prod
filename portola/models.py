@@ -307,7 +307,7 @@ class NotificationQueue(models.Model):
         return "{}".format(self.subject)
 
 class Project(models.Model):
-    document_approver = models.ForeignKey('auth.User', limit_choices_to={'is_active': True}, related_name='document_approver', blank=False, null=False, on_delete=models.CASCADE)
+    document_approver = models.ForeignKey('auth.User', limit_choices_to={'is_active': True}, related_name='document_approver', blank=True, null=True, on_delete=models.CASCADE)
     number = models.CharField(db_index=True, max_length=16, blank=False, null=False)
     status = models.CharField(db_index=True, choices=PROJECT_STATUS, default='ACTIVE', max_length=100)
     salesforce_id = models.CharField(max_length=10, blank=True, null=True)
@@ -317,10 +317,10 @@ class Project(models.Model):
     last_document_date = models.DateField(null=True, blank=False)
     customer = models.ForeignKey('Entity',
         # related_name='entity',
-        on_delete=models.CASCADE, blank=False, null=False)
+        on_delete=models.CASCADE, blank=True, null=True)
     primary_contact = models.ForeignKey('auth.User', limit_choices_to={'is_active': True},
         # related_name='primary_contact',
-        on_delete=models.CASCADE, blank=False, null=False)
+        on_delete=models.CASCADE, blank=True, null=True)
     # additional_contacts = multi
     pvel_manager = models.ForeignKey('auth.User', limit_choices_to={'is_staff': True}, related_name='pvel_manager', on_delete=models.CASCADE, blank=False, null=False)
     type = models.CharField(db_index=True, choices=PROJECT_CHOICES, default='MPQP', max_length=100)
@@ -449,7 +449,7 @@ class DocumentTemplate(models.Model):
 
 class ProjectTemplate(models.Model):
     template_title = models.CharField(max_length=150, blank=True, null=True,unique=True)
-    document_approver = models.ForeignKey('auth.User', limit_choices_to={'is_active': True}, related_name='documentapprover', blank=False, null=False, on_delete=models.CASCADE)
+    document_approver = models.ForeignKey('auth.User', limit_choices_to={'is_active': True}, related_name='documentapprover', blank=True, null=True, on_delete=models.CASCADE)
     number = models.CharField(db_index=True, max_length=16, blank=False, null=False)
     status = models.CharField(db_index=True, choices=PROJECT_STATUS, default='ACTIVE', max_length=100)
     salesforce_id = models.CharField(max_length=10, blank=True, null=True)
@@ -457,12 +457,12 @@ class ProjectTemplate(models.Model):
     contract_signature = models.DateField(null=True, blank=False)
     # TODO: This is not a real database field. It's calculated by the serializer. REMOVEME
     last_document_date = models.DateField(null=True, blank=False)
-    customer = models.ForeignKey('Entity',
-        # related_name='entity',
-        on_delete=models.CASCADE, blank=False, null=False)
+    # customer = models.ForeignKey('EntityTemplate',
+    #     related_name='entitytemplate',
+    #     on_delete=models.CASCADE, blank=False, null=False)
     primary_contact = models.ForeignKey('auth.User', limit_choices_to={'is_active': True},
         # related_name='primary_contact',
-        on_delete=models.CASCADE, blank=False, null=False)
+        on_delete=models.CASCADE, blank=True, null=True)
     # additional_contacts = multi
     pvel_manager = models.ForeignKey('auth.User', limit_choices_to={'is_staff': True}, related_name='pvelmanager', on_delete=models.CASCADE, blank=False, null=False)
     type = models.CharField(db_index=True, choices=PROJECT_CHOICES, default='MPQP', max_length=100)
@@ -504,5 +504,12 @@ class ProjectEntity(models.Model):
     project = models.ForeignKey('Project', on_delete=models.CASCADE, blank=False, null=False)
     customer = models.ForeignKey('Entity', on_delete=models.CASCADE, blank=False, null=False)
     document_approver = models.ForeignKey('auth.User', on_delete=models.CASCADE, blank=False, null=False)
+    primary_contact = models.ForeignKey('auth.User', limit_choices_to={'is_active': True},related_name='primary_contact',on_delete=models.CASCADE, blank=True, null=True)
     
+    
+class ProjectEntityTemplate(models.Model):
+    projecttemplate = models.ForeignKey('ProjectTemplate', on_delete=models.CASCADE, blank=False, null=False)
+    customer = models.ForeignKey('Entity', on_delete=models.CASCADE, blank=False, null=False)
+    document_approver = models.ForeignKey('auth.User', on_delete=models.CASCADE, blank=False, null=False)
+    primary_contact = models.ForeignKey('auth.User', limit_choices_to={'is_active': True},related_name='primary_contact_template',on_delete=models.CASCADE, blank=True, null=True)
     

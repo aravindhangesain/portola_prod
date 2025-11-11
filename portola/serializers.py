@@ -51,6 +51,7 @@ class CompanySerializer(serializers.HyperlinkedModelSerializer):
         fields =( 'name','url','website','country','bio',)
 
 class DocumentListSerializer(serializers.HyperlinkedModelSerializer):
+    project = serializers.PrimaryKeyRelatedField(read_only=True)
     # owner = serializers.ReadOnlyField(source='owner.username')
     name = serializers.SerializerMethodField()
     type_text = serializers.ReadOnlyField(source='get_type_display')
@@ -237,12 +238,12 @@ class DocumentSerializer(serializers.HyperlinkedModelSerializer):
     #     validated_data['disclosure'] = validated_data.get('disclosure','PENDING')
     #     super().create(**validated_data)
 
-    def validate(self, instance):
-        entity = instance['entity']
-        project = instance['project']
-        if entity != project.customer:
-            raise serializers.ValidationError("entity must be equal to project.entity")
-        return instance
+    # def validate(self, instance):
+    #     entity = instance['entity']
+    #     project = instance['project']
+    #     if entity != project.customer:
+    #         raise serializers.ValidationError("entity must be equal to project.entity")
+    #     return instance
 
     def to_representation(self, instance):
         """Convert `file location` to download URL."""
@@ -578,7 +579,9 @@ class ProjectSerializer(serializers.HyperlinkedModelSerializer):
     document_project = DocumentListSerializer(many=True, read_only=True)
     followers = serializers.SerializerMethodField()
     following = serializers.SerializerMethodField()
-    # customer_name = serializers.SerializerMethodField()
+    customer_name = serializers.SerializerMethodField()
+    primary_contact_id = serializers.SerializerMethodField()
+    primary_contact = serializers.SerializerMethodField()
     primary_contact_user = serializers.SerializerMethodField()
     primary_contact_name = serializers.SerializerMethodField()
     document_approver_user = serializers.SerializerMethodField()
@@ -586,19 +589,86 @@ class ProjectSerializer(serializers.HyperlinkedModelSerializer):
     pvel_manager_user = serializers.SerializerMethodField()
     pvel_manager_name = serializers.SerializerMethodField()
     last_document_date = serializers.SerializerMethodField()
+    document_approver = serializers.SerializerMethodField()
 
-    # def get_customer_name(self, obj):
-    #     return obj.customer.display_name
+    def get_customer_name(self, obj):
+        try:
+            project_entity = ProjectEntity.objects.filter(project__id=obj.id)
+            cust_arry = []
+            for pe in project_entity:
+                cust_arry.append(pe.customer.display_name)
+            return cust_arry
+        except Exception as e:
+            return []
+    def get_primary_contact_id(self, obj):
+        project_entities = ProjectEntity.objects.filter(project_id=obj.id)
+        cust_array=[]
+        for project_entity in project_entities:
+            if project_entity and project_entity.primary_contact:
+                cust_array.append(project_entity.primary_contact.id)
+            else:
+                continue
+        return cust_array
+        
+    def get_primary_contact(self, obj):
+        project_entities = ProjectEntity.objects.filter(project_id=obj.id)
+        cust_array=[]
+        for project_entity in project_entities:
+            if project_entity and project_entity.primary_contact:
+                cust_array.append(f"https://portolauatapi.azurewebsites.net/api/users/{project_entity.primary_contact.id}")
+            else:
+                continue
+        return cust_array
+
+
     def get_primary_contact_user(self, obj):
-        return obj.primary_contact.username
+        project_entities = ProjectEntity.objects.filter(project_id=obj.id)
+        cust_array=[]
+        for project_entity in project_entities:
+            if project_entity and project_entity.primary_contact:
+                cust_array.append(project_entity.primary_contact.username)
+            else:
+                continue
+        return cust_array
+
+
     def get_primary_contact_name(self, obj):
-        name = '{}, {}'.format(obj.primary_contact.last_name, obj.primary_contact.first_name)
-        return name
+        project_entities = ProjectEntity.objects.filter(project_id=obj.id)
+        cust_array=[]
+        for pe in project_entities:
+                if pe.primary_contact:
+                    name = f"{pe.primary_contact.last_name}, {pe.primary_contact.first_name}"
+                    cust_array.append(name)
+        return cust_array
+    def get_document_approver(self, obj):
+        try:
+            project_entity = ProjectEntity.objects.filter(project__id=obj.id)
+            cust_arry = []
+            for pe in project_entity:
+                cust_arry.append(f"https://portolauatapi.azurewebsites.net/api/users/{pe.document_approver.id}")
+            return cust_arry
+        except Exception as e:
+            return []
     def get_document_approver_user(self, obj):
-        return obj.document_approver.username
+        try:
+            project_entity = ProjectEntity.objects.filter(project__id=obj.id)
+            cust_arry = []
+            for pe in project_entity:
+                cust_arry.append(pe.document_approver.username)
+            return cust_arry
+        except Exception as e:
+            return []
     def get_document_approver_name(self, obj):
-        name = '{}, {}'.format(obj.document_approver.last_name, obj.document_approver.first_name)
-        return name
+        try:
+            project_entities = ProjectEntity.objects.filter(project_id=obj.id).select_related('document_approver')
+            approver_names = []
+            for pe in project_entities:
+                if pe.document_approver:
+                    name = f"{pe.document_approver.last_name}, {pe.document_approver.first_name}"
+                    approver_names.append(name)
+            return approver_names
+        except Exception as e:
+            return []
     def get_pvel_manager_user(self, obj):
         return obj.pvel_manager.username
     def get_pvel_manager_name(self, obj):
@@ -643,13 +713,14 @@ class ProjectSerializer(serializers.HyperlinkedModelSerializer):
             'document_approver_user',
             'document_approver_name',
             # 'customer',
-            # 'customer_name',
+            'customer_name',
             'following',
             'type',
             'type_text',
             'contract_signature',
             'last_document_date',
             'primary_contact',
+            'primary_contact_id',
             'primary_contact_user',
             'primary_contact_name',
             'pvel_manager',
@@ -880,7 +951,6 @@ class TokenSigninSerializer(serializers.Serializer):
 
     
 class DocumentTemplateSerializer(serializers.HyperlinkedModelSerializer):
-
     entity_display_name = serializers.ReadOnlyField(source='entity.display_name')
     project_number = serializers.ReadOnlyField(source='project.number')
     type_text = serializers.ReadOnlyField(source='get_type_display')
@@ -890,8 +960,6 @@ class DocumentTemplateSerializer(serializers.HyperlinkedModelSerializer):
         queryset=TechnologyTag.objects.all()
     )
     
-    
-    
     class Meta:
         model=DocumentTemplate
         fields=(
@@ -899,6 +967,7 @@ class DocumentTemplateSerializer(serializers.HyperlinkedModelSerializer):
             'url',
             'template_title',
             'document_title',
+            'entity_id',
             'entity',
             'entity_display_name',
             'issued_date',
@@ -914,33 +983,200 @@ class DocumentTemplateSerializer(serializers.HyperlinkedModelSerializer):
 
         )
 class ProjectTemplateSerializer(serializers.HyperlinkedModelSerializer):
-
     type_text = serializers.ReadOnlyField(source='get_type_display')
     document_project = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
     document_project = DocumentListSerializer(many=True, read_only=True)
     # followers = serializers.SerializerMethodField()
     # following = serializers.SerializerMethodField()
     customer_name = serializers.SerializerMethodField()
+    customer = serializers.SerializerMethodField()
+    primary_contact_id = serializers.SerializerMethodField()
+    primary_contact = serializers.SerializerMethodField()
     primary_contact_user = serializers.SerializerMethodField()
     primary_contact_name = serializers.SerializerMethodField()
+    primary_contact_details = serializers.SerializerMethodField()
     document_approver_user = serializers.SerializerMethodField()
     document_approver_name = serializers.SerializerMethodField()
     pvel_manager_user = serializers.SerializerMethodField()
     pvel_manager_name = serializers.SerializerMethodField()
     last_document_date = serializers.SerializerMethodField()
+    document_approver = serializers.SerializerMethodField()
+    document_approver_id = serializers.SerializerMethodField()
+    custom_response = serializers.SerializerMethodField()
+    document_approver_details=serializers.SerializerMethodField()
+
+    def get_custom_response(self, obj):
+        try:
+            project_entities = ProjectEntityTemplate.objects.filter(projecttemplate_id=obj.id)
+            result = []
+
+            for pe in project_entities:
+                result.append({
+                    "customer_id": pe.customer.id if pe.customer else None,
+                    "document_approver_id": pe.document_approver.id if pe.document_approver else None,
+                    "primary_contact_id":pe.primary_contact.id if pe.primary_contact else None
+                })
+
+            return result
+        except Exception as e:
+            print(f"Error in get_custom_response: {e}")
+            return []
+
+    def get_document_approver_id(self, obj):
+        try:
+            project_entities = ProjectEntityTemplate.objects.filter(projecttemplate_id=obj.id)
+            approver_ids = [
+                pe.document_approver.id
+                for pe in project_entities if pe.document_approver
+            ]
+            return approver_ids
+        except Exception as e:
+            return []
 
     def get_customer_name(self, obj):
-        return obj.customer.display_name
+        try:
+            project_entities = ProjectEntityTemplate.objects.filter(projecttemplate_id=obj.id)
+            cust_array = [
+                f"https://portolauatapi.azurewebsites.net/api/entities/{pe.customer.id}"
+                for pe in project_entities if pe.customer
+            ]
+            return cust_array
+        except Exception as e:
+            return []
+    
+    def get_customer(self, obj):
+        try:
+            customer_ids = ProjectEntityTemplate.objects.filter(
+                projecttemplate_id=obj.id
+            ).values_list('customer_id', flat=True)
+            customers = Entity.objects.filter(id__in=customer_ids)
+            serializer = EntityListSerializer(
+                customers,
+                many=True,
+                context={'request': self.context.get('request')}
+            )
+            return serializer.data
+        except Exception as e:
+            print(f"Error in get_customer: {e}")
+            return []
+    def get_document_approver_details(self, obj):
+        try:
+            # Get lists from your existing functions
+            ids = self.get_document_approver_id(obj)
+            urls = self.get_document_approver(obj)
+            users = self.get_document_approver_user(obj)
+            names = self.get_document_approver_name(obj)
+
+            # Combine them into an array of objects
+            approvers = []
+            for approver_id, approver_url, approver_user, approver_name in zip(ids, urls, users, names):
+                approvers.append({
+                    "document_approver_id": approver_id,
+                    "document_approver": approver_url,
+                    "document_approver_user": approver_user,
+                    "document_approver_name": approver_name
+                })
+
+            return approvers
+
+        except Exception as e:
+            print("Error combining approver data:", e)
+            return []
+        
+    def get_primary_contact_details(self, obj):
+        try:
+            ids = self.get_primary_contact_id(obj)
+            urls = self.get_primary_contact(obj)
+            users = self.get_primary_contact_user(obj)
+            names = self.get_primary_contact_name(obj)
+
+            # Combine them into an array of objects
+            primary_contact = []
+            for primary_contact_id, primary_contact_url, primary_contact_user, primary_contact_name in zip(ids, urls, users, names):
+                primary_contact.append({
+                    "document_approver_id": primary_contact_id,
+                    "document_approver": primary_contact_url,
+                    "document_approver_user": primary_contact_user,
+                    "document_approver_name": primary_contact_name
+                })
+
+            return primary_contact
+
+        except Exception as e:
+            print("Error combining approver data:", e)
+            return []
+
+    def get_primary_contact_id(self, obj):
+        project_entities = ProjectEntityTemplate.objects.filter(projecttemplate_id=obj.id)
+        cust_array=[]
+        for project_entity in project_entities:
+            if project_entity and project_entity.primary_contact:
+                cust_array.append(project_entity.primary_contact.id)
+            else:
+                continue
+        return cust_array
+        
+    def get_primary_contact(self, obj):
+        project_entities = ProjectEntityTemplate.objects.filter(projecttemplate_id=obj.id)
+        cust_array=[]
+        for project_entity in project_entities:
+            if project_entity and project_entity.primary_contact:
+                cust_array.append(f"https://portolauatapi.azurewebsites.net/api/users/{project_entity.primary_contact.id}")
+            else:
+                continue
+        return cust_array
+
+
     def get_primary_contact_user(self, obj):
-        return obj.primary_contact.username
+        project_entities = ProjectEntityTemplate.objects.filter(projecttemplate_id=obj.id)
+        cust_array=[]
+        for project_entity in project_entities:
+            if project_entity and project_entity.primary_contact:
+                cust_array.append(project_entity.primary_contact.username)
+            else:
+                continue
+        return cust_array
+
+
     def get_primary_contact_name(self, obj):
-        name = '{}, {}'.format(obj.primary_contact.last_name, obj.primary_contact.first_name)
-        return name
+        project_entities = ProjectEntityTemplate.objects.filter(projecttemplate_id=obj.id)
+        cust_array=[]
+        for pe in project_entities:
+                if pe.primary_contact:
+                    name = f"{pe.primary_contact.last_name}, {pe.primary_contact.first_name}"
+                    cust_array.append(name)
+        return cust_array
+            
+    
+    def get_document_approver(self, obj):
+        try:
+            project_entity = ProjectEntityTemplate.objects.filter(projecttemplate__id=obj.id)
+            cust_arry = []
+            for pe in project_entity:
+                cust_arry.append(f"https://portolauatapi.azurewebsites.net/api/users/{pe.document_approver.id}")
+            return cust_arry
+        except Exception as e:
+            return []
     def get_document_approver_user(self, obj):
-        return obj.document_approver.username
+        try:
+            project_entity = ProjectEntityTemplate.objects.filter(projecttemplate__id=obj.id)
+            cust_arry = []
+            for pe in project_entity:
+                cust_arry.append(pe.document_approver.username)
+            return cust_arry
+        except Exception as e:
+            return []
     def get_document_approver_name(self, obj):
-        name = '{}, {}'.format(obj.document_approver.last_name, obj.document_approver.first_name)
-        return name
+        try:
+            project_entities = ProjectEntityTemplate.objects.filter(projecttemplate__id=obj.id).select_related('document_approver')
+            approver_names = []
+            for pe in project_entities:
+                if pe.document_approver:
+                    name = f"{pe.document_approver.last_name}, {pe.document_approver.first_name}"
+                    approver_names.append(name)
+            return approver_names
+        except Exception as e:
+            return []
     def get_pvel_manager_user(self, obj):
         return obj.pvel_manager.username
     def get_pvel_manager_name(self, obj):
@@ -981,9 +1217,11 @@ class ProjectTemplateSerializer(serializers.HyperlinkedModelSerializer):
         fields = ('id','url','number','status','template_title',
             'salesforce_id',
             'name',
+            'document_approver_id',
             'document_approver',
             'document_approver_user',
             'document_approver_name',
+            'document_approver_details',
             'customer',
             'customer_name',
             # 'following',
@@ -991,6 +1229,8 @@ class ProjectTemplateSerializer(serializers.HyperlinkedModelSerializer):
             'type_text',
             'contract_signature',
             'last_document_date',
+            'primary_contact_details',
+            'primary_contact_id',
             'primary_contact',
             'primary_contact_user',
             'primary_contact_name',
@@ -999,7 +1239,8 @@ class ProjectTemplateSerializer(serializers.HyperlinkedModelSerializer):
             'pvel_manager_name',
             # 'followers',
             'document_project',
-            'active'
+            'active',
+            'custom_response'
             )
         
 class EntityTemplateSerializer(serializers.HyperlinkedModelSerializer):
@@ -1077,12 +1318,15 @@ class EntityTemplateSerializer(serializers.HyperlinkedModelSerializer):
         'website','country','active')
     
 class DocumentApproverSerializer(serializers.HyperlinkedModelSerializer):
-    entity_display_name = serializers.ReadOnlyField(source='profile.entity.display_name')
+    # entity_display_name = serializers.ReadOnlyField(source='entity.display_name')
+    # username = serializers.ReadOnlyField(source='user.username')
+
     class Meta:
         model = User
         fields = (
             'id',
+            'url',
             'username',
-            'entity_display_name',
+            # 'entity_display_name',
         )
     
