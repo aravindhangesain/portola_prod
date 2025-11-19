@@ -5,6 +5,8 @@ from rest_framework_tracking.models import APIRequestLog
 from django.contrib.auth.models import User
 from rest_framework.reverse import reverse_lazy
 import datetime
+import json,ast
+from rest_framework.renderers import BrowsableAPIRenderer
 
 class ApiRequestLogSerializer(serializers.ModelSerializer):
     username = serializers.SerializerMethodField()
@@ -567,15 +569,13 @@ class ProjectNameSerializer(serializers.ModelSerializer):
         model = Project
         fields = ('number','type_text')
 
-class ProjectSerializer(serializers.HyperlinkedModelSerializer):
-    # customer = EntitySerializer(many=False,
-    #     queryset=Entity.objects.all(),
-    #     read_only=True)
-    # customer = EntitySerializer(many=False)
-    # customer = EntitySubSerializer(many=False, queryset=Entity.objects.all() )
 
+
+
+class ProjectSerializer(serializers.HyperlinkedModelSerializer):
+
+    # Keep your read-only/representation fields
     type_text = serializers.ReadOnlyField(source='get_type_display')
-    # document_project = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
     document_project = DocumentListSerializer(many=True, read_only=True)
     followers = serializers.SerializerMethodField()
     following = serializers.SerializerMethodField()
@@ -591,144 +591,199 @@ class ProjectSerializer(serializers.HyperlinkedModelSerializer):
     last_document_date = serializers.SerializerMethodField()
     document_approver = serializers.SerializerMethodField()
 
+    # HTML FORM — Multiselect dropdown
+    customer_ids = serializers.PrimaryKeyRelatedField(
+        queryset=Entity.objects.all(),
+        many=True,
+        write_only=True,
+        required=False
+    )
+
+    # UI + Raw JSON — accepts JSON list or stringified list
+    customers = serializers.JSONField(
+        write_only=True,
+        required=False
+    )
+
+    document_approver_input = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        write_only=True,
+        required=False
+    )
+    primary_contact_input = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        write_only=True,
+        required=False
+    )
+
+    def validate(self, attrs):
+        import json, ast
+
+        html_ids = attrs.pop("customer_ids", None)
+        raw_customers = attrs.pop("customers", None)
+
+        document_approver = attrs.get("document_approver_input")
+        primary_contact = attrs.get("primary_contact_input")
+
+        final = []
+
+        # ------------------------------
+        # CASE 1: UI sent stringified JSON
+        # ------------------------------
+        if isinstance(raw_customers, str):
+            try:
+                raw_customers = json.loads(raw_customers)
+            except:
+                try:
+                    raw_customers = ast.literal_eval(raw_customers)
+                except:
+                    raise serializers.ValidationError({
+                        "customers": "Invalid customers JSON format"
+                    })
+
+        # ------------------------------
+        # CASE 2: UI/raw JSON (list of dicts)
+        # ------------------------------
+        if isinstance(raw_customers, list):
+            final = raw_customers
+
+        # ------------------------------
+        # CASE 3: HTML form (list of PKs)
+        # ------------------------------
+        elif html_ids:
+            for entity in html_ids:
+                final.append({
+                    "customer_id": entity.id,
+                    "document_approver_id": document_approver.id if document_approver else None,
+                    "primary_contact_id": primary_contact.id if primary_contact else None,
+                })
+
+        attrs["customers"] = final
+        return attrs
+
+    def create(self, validated_data):
+        customers = validated_data.pop("customers", [])
+        validated_data.pop("document_approver_input", None)
+        validated_data.pop("primary_contact_input", None)
+
+        project = super().create(validated_data)
+
+        for c in customers:
+            ProjectEntity.objects.create(
+                project=project,
+                customer_id=c.get("customer_id"),
+                document_approver_id=c.get("document_approver_id"),
+                primary_contact_id=c.get("primary_contact_id"),
+            )
+
+        return project
+
+    # --------------------------------------------------------
+    # Representation methods (unchanged)
+    # --------------------------------------------------------
     def get_customer_name(self, obj):
         try:
-            project_entity = ProjectEntity.objects.filter(project__id=obj.id)
-            cust_arry = []
-            for pe in project_entity:
-                cust_arry.append(pe.customer.display_name)
-            return cust_arry
-        except Exception as e:
+            project_entity = ProjectEntity.objects.filter(project_id=obj.id)
+            return [pe.customer.display_name for pe in project_entity]
+        except:
             return []
-    def get_primary_contact_id(self, obj):
-        project_entities = ProjectEntity.objects.filter(project_id=obj.id)
-        cust_array=[]
-        for project_entity in project_entities:
-            if project_entity and project_entity.primary_contact:
-                cust_array.append(project_entity.primary_contact.id)
-            else:
-                continue
-        return cust_array
-        
-    def get_primary_contact(self, obj):
-        project_entities = ProjectEntity.objects.filter(project_id=obj.id)
-        cust_array=[]
-        for project_entity in project_entities:
-            if project_entity and project_entity.primary_contact:
-                cust_array.append(f"https://portolaprod.azurewebsites.net/api/users/{project_entity.primary_contact.id}")
-            else:
-                continue
-        return cust_array
 
+    def get_primary_contact_id(self, obj):
+        return [
+            pe.primary_contact.id
+            for pe in ProjectEntity.objects.filter(project_id=obj.id)
+            if pe.primary_contact
+        ]
+
+    def get_primary_contact(self, obj):
+        return [
+            f"https://portolaprod.azurewebsites.net/api/users/{pe.primary_contact.id}"
+            for pe in ProjectEntity.objects.filter(project_id=obj.id)
+            if pe.primary_contact
+        ]
 
     def get_primary_contact_user(self, obj):
-        project_entities = ProjectEntity.objects.filter(project_id=obj.id)
-        cust_array=[]
-        for project_entity in project_entities:
-            if project_entity and project_entity.primary_contact:
-                cust_array.append(project_entity.primary_contact.username)
-            else:
-                continue
-        return cust_array
-
+        return [
+            pe.primary_contact.username
+            for pe in ProjectEntity.objects.filter(project_id=obj.id)
+            if pe.primary_contact
+        ]
 
     def get_primary_contact_name(self, obj):
-        project_entities = ProjectEntity.objects.filter(project_id=obj.id)
-        cust_array=[]
-        for pe in project_entities:
-                if pe.primary_contact:
-                    name = f"{pe.primary_contact.last_name}, {pe.primary_contact.first_name}"
-                    cust_array.append(name)
-        return cust_array
+        return [
+            f"{pe.primary_contact.last_name}, {pe.primary_contact.first_name}"
+            for pe in ProjectEntity.objects.filter(project_id=obj.id)
+            if pe.primary_contact
+        ]
+
     def get_document_approver(self, obj):
-        try:
-            project_entity = ProjectEntity.objects.filter(project__id=obj.id)
-            cust_arry = []
-            for pe in project_entity:
-                cust_arry.append(f"https://portolaprod.azurewebsites.net/api/users/{pe.document_approver.id}")
-            return cust_arry
-        except Exception as e:
-            return []
+        return [
+            f"https://portolaprod.azurewebsites.net/api/users/{pe.document_approver.id}"
+            for pe in ProjectEntity.objects.filter(project_id=obj.id)
+            if pe.document_approver
+        ]
+
     def get_document_approver_user(self, obj):
-        try:
-            project_entity = ProjectEntity.objects.filter(project__id=obj.id)
-            cust_arry = []
-            for pe in project_entity:
-                cust_arry.append(pe.document_approver.username)
-            return cust_arry
-        except Exception as e:
-            return []
+        return [
+            pe.document_approver.username
+            for pe in ProjectEntity.objects.filter(project_id=obj.id)
+            if pe.document_approver
+        ]
+
     def get_document_approver_name(self, obj):
-        try:
-            project_entities = ProjectEntity.objects.filter(project_id=obj.id).select_related('document_approver')
-            approver_names = []
-            for pe in project_entities:
-                if pe.document_approver:
-                    name = f"{pe.document_approver.last_name}, {pe.document_approver.first_name}"
-                    approver_names.append(name)
-            return approver_names
-        except Exception as e:
-            return []
+        return [
+            f"{pe.document_approver.last_name}, {pe.document_approver.first_name}"
+            for pe in ProjectEntity.objects.filter(project_id=obj.id)
+            if pe.document_approver
+        ]
+
     def get_pvel_manager_user(self, obj):
         return obj.pvel_manager.username
-    def get_pvel_manager_name(self, obj):
-        name = '{}, {}'.format(obj.pvel_manager.last_name, obj.pvel_manager.first_name)
-        return name
-    def get_last_document_date(self, obj):
-        # TODO: Replace document_project with document_set
-        try:
-            last_date = obj.document_project.all().order_by('issued_date').last().issued_date
-        except:
-            last_date = None
-        return last_date
 
-    def get_followers(self, object):
-        followers_qs = object.followers.all()
-        qs=[]
-        for follower in followers_qs:
-            if follower.profile.entity not in qs:
-                qs.append(follower.profile.entity)
-        serializer = EntityNameSerializer(qs, many=True, context=self.context)
+    def get_pvel_manager_name(self, obj):
+        return f"{obj.pvel_manager.last_name}, {obj.pvel_manager.first_name}"
+
+    def get_last_document_date(self, obj):
+        try:
+            return obj.document_project.order_by('issued_date').last().issued_date
+        except:
+            return None
+
+    def get_followers(self, obj):
+        qs = {f.profile.entity for f in obj.followers.all()}
+        serializer = EntityNameSerializer(list(qs), many=True, context=self.context)
         return serializer.data
 
-    # This is if we decide full entity gets all follows
-    def entity_following(self, obj):
-        user = self.context.get('request').user
-        if user:
-            for follower in obj.followers.all():
-                if user.profile.entity == follower.profile.entity:
-                    return True
-        return False
-
-    # current implementation: User only controls own following
     def get_following(self, obj):
-        return (self.context.get('request').user in obj.followers.all())
+        return self.context.get("request").user in obj.followers.all()
 
+    def get_fields(self):
+        fields = super().get_fields()
+        request = self.context.get("request")
+
+        if request and isinstance(request.accepted_renderer, BrowsableAPIRenderer):
+            fields.pop("customers", None)
+
+        return fields
+
+    
     class Meta:
         model = Project
-        fields = ('id','url','number','status',
-            'salesforce_id',
-            'name',
-            'document_approver',
-            'document_approver_user',
-            'document_approver_name',
-            # 'customer',
-            'customer_name',
-            'following',
-            'type',
-            'type_text',
-            'contract_signature',
-            'last_document_date',
-            'primary_contact',
-            'primary_contact_id',
-            'primary_contact_user',
-            'primary_contact_name',
-            'pvel_manager',
-            'pvel_manager_user',
-            'pvel_manager_name',
-            'followers',
-            'document_project',
-            )
+        fields = (
+            'id', 'url', 'number', 'status',
+            'salesforce_id', 'name',
+            'document_approver', 'document_approver_user', 'document_approver_name',
+            'customer_name', 'following', 'type', 'type_text',
+            'contract_signature', 'last_document_date',
+            'primary_contact', 'primary_contact_id', 'primary_contact_user',
+            'primary_contact_name', 'pvel_manager', 'pvel_manager_user',
+            'pvel_manager_name', 'followers', 'document_project',
+
+            'customers',          
+            'customer_ids',
+            'document_approver_input',
+            'primary_contact_input',
+        )
 
 class PVModelSerializer(serializers.HyperlinkedModelSerializer):
     created_by = serializers.ReadOnlyField(source='created_by.username')

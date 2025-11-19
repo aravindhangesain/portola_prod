@@ -48,6 +48,7 @@ from openpyxl.writer.excel import save_virtual_workbook
 from io import BytesIO
 import pandas as pd
 from rest_framework.exceptions import ValidationError
+from rest_framework.renderers import BrowsableAPIRenderer
 
 
 
@@ -875,28 +876,28 @@ class ProjectViewSet(DetailSerializerMixin,LoggingMixin,viewsets.ModelViewSet):
         serializer = ProjectFollowSerializer(queryset, many=False, context=self.context)
         return Response(serializer.data)
 
-    def perform_create(self, serializer):
-        instance = serializer.save()
-        customers_raw = self.request.data.get('customers', [])
+    # def perform_create(self, serializer):
+    #     instance = serializer.save()
+    #     customers_raw = self.request.data.get('customers', [])
 
-        if isinstance(customers_raw, str):
-            try:
-                customers = json.loads(customers_raw)
-            except Exception as e:
-                raise ValidationError({"error": f"Error parsing customers JSON: {str(e)}"})
-        else:
-            customers = customers_raw
+    #     if isinstance(customers_raw, str):
+    #         try:
+    #             customers = json.loads(customers_raw)
+    #         except Exception as e:
+    #             raise ValidationError({"error": f"Error parsing customers JSON: {str(e)}"})
+    #     else:
+    #         customers = customers_raw
 
-        for customer in customers:
-            try:
-                ProjectEntity.objects.create(
-                    project_id=instance.id,
-                    customer_id=customer.get('customer_id'),
-                    document_approver_id=customer.get('document_approver_id'),
-                    primary_contact_id=customer.get('primary_contact_id'),
-                )
-            except Exception as e:
-                raise ValidationError({"error": f"Error creating ProjectEntity: {str(e)}"})
+    #     for customer in customers:
+    #         try:
+    #             ProjectEntity.objects.create(
+    #                 project_id=instance.id,
+    #                 customer_id=customer.get('customer_id'),
+    #                 document_approver_id=customer.get('document_approver_id'),
+    #                 primary_contact_id=customer.get('primary_contact_id'),
+    #             )
+    #         except Exception as e:
+    #             raise ValidationError({"error": f"Error creating ProjectEntity: {str(e)}"})
 
     def retrieve(self, request, *args, **kwargs):
         try:
