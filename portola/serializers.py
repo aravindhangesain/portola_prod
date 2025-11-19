@@ -7,6 +7,7 @@ from rest_framework.reverse import reverse_lazy
 import datetime
 import json,ast
 from rest_framework.renderers import BrowsableAPIRenderer
+from django.db import transaction
 
 class ApiRequestLogSerializer(serializers.ModelSerializer):
     username = serializers.SerializerMethodField()
@@ -677,6 +678,82 @@ class ProjectSerializer(serializers.HyperlinkedModelSerializer):
             )
 
         return project
+    
+    def update(self, instance, validated_data):
+        """
+        Fully handles all update scenarios for ProjectEntity:
+        - When customers list is provided → update row-by-row (smart merge)
+        - When customers is missing → update ALL rows with global inputs
+        """
+
+        customers = validated_data.pop("customers", None)
+        global_doc = validated_data.pop("document_approver_input", None)
+        global_primary = validated_data.pop("primary_contact_input", None)
+
+        # Update Project first
+        project = super().update(instance, validated_data)
+
+        with transaction.atomic():
+
+            # ------------------------------------------------------
+            # CASE 1 — customers list is provided → row-by-row update
+            # ------------------------------------------------------
+            if isinstance(customers, list) and customers:
+
+                existing_rows = {
+                    pe.customer_id: pe
+                    for pe in ProjectEntity.objects.filter(project=project)
+                }
+
+                for c in customers:
+                    cust_id = c.get("customer_id")
+
+                    # Smart merge: take row value OR global fallback
+                    doc_id = c.get("document_approver_id") or (global_doc.id if global_doc else None)
+                    primary_id = c.get("primary_contact_id") or (global_primary.id if global_primary else None)
+
+                    if cust_id in existing_rows:
+                        # Update existing row
+                        ProjectEntity.objects.filter(
+                            id=existing_rows[cust_id].id
+                        ).update(
+                            document_approver_id=doc_id,
+                            primary_contact_id=primary_id
+                        )
+                    else:
+                        pe_fields=ProjectEntity.objects.filter(project_id=project.id).first()
+                        ProjectEntity.objects.create(
+                        project=project,
+                        customer_id=cust_id,
+                        document_approver_id=pe_fields.document_approver.id,
+                        primary_contact_id=pe_fields.primary_contact.id
+                    )
+
+                    
+
+            # ------------------------------------------------------
+            # CASE 2 — NO customers list → bulk update all rows
+            # ------------------------------------------------------
+            else:
+                update_fields = {}
+
+                # Update only if the field was actually sent and not blank
+                if "document_approver_input" in self.initial_data:
+                    if global_doc:  # valid value
+                        update_fields["document_approver_id"] = global_doc.id
+                    # if empty string → user intentionally cleared it? Your model disallows this so ignore.
+
+                if "primary_contact_input" in self.initial_data:
+                    if global_primary:  # valid value
+                        update_fields["primary_contact_id"] = global_primary.id
+                    # if empty string → allow clearing because model allows null=True
+
+                if update_fields:
+                    ProjectEntity.objects.filter(project=project).update(**update_fields)
+
+        return project
+    
+    
 
     # --------------------------------------------------------
     # Representation methods (unchanged)
