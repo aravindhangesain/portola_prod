@@ -608,15 +608,38 @@ class ProjectSerializer(serializers.HyperlinkedModelSerializer):
 
     document_approver_input = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(),
-        write_only=True,
-        required=False
+        required=False,
+        allow_null=True,
+        style={'empty_label': '---------'}
+        
     )
     primary_contact_input = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(),
-        write_only=True,
-        required=False
+        required=False,
+        allow_null=True,
+        style={'empty_label': '---------'}
+       
     )
 
+    def get_initial(self):
+        """
+        Pre-fills the BrowsableAPI form with existing ProjectEntity values.
+        Only affects DRF HTML UI, not JSON API.
+        """
+        initial = super().get_initial()
+
+        obj = getattr(self, 'instance', None)
+        if not obj:
+            return initial
+
+        # Choose the first ProjectEntity row for this project
+        pe = ProjectEntity.objects.filter(project=obj).first()
+        if pe:
+            initial['document_approver_input'] = pe.document_approver.id
+            initial['primary_contact_input'] = pe.primary_contact.id if pe.primary_contact else None
+
+        return initial
+    
     def validate(self, attrs):
         import json, ast
 

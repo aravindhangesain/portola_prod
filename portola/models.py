@@ -503,7 +503,7 @@ class EntityTemplate(models.Model):
 class ProjectEntity(models.Model):
     project = models.ForeignKey('Project', on_delete=models.CASCADE, blank=False, null=False)
     customer = models.ForeignKey('Entity', on_delete=models.CASCADE, blank=False, null=False)
-    document_approver = models.ForeignKey('auth.User', on_delete=models.CASCADE, blank=False, null=False)
+    document_approver = models.ForeignKey('auth.User', on_delete=models.CASCADE, blank=True, null=True)
     primary_contact = models.ForeignKey('auth.User', limit_choices_to={'is_active': True},related_name='primary_contact',on_delete=models.CASCADE, blank=True, null=True)
     
     

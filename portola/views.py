@@ -779,7 +779,7 @@ class ProfileViewSet(LoggingMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
-class ProjectViewSet(DetailSerializerMixin,LoggingMixin,viewsets.ModelViewSet):
+class ProjectViewSet(LoggingMixin,viewsets.ModelViewSet):
     """
     This viewset automatically provides `list`, `create`, `retrieve`,
     `update` and `destroy` actions.
@@ -798,10 +798,26 @@ class ProjectViewSet(DetailSerializerMixin,LoggingMixin,viewsets.ModelViewSet):
     logging_methods = ['POST', 'PUT', 'PATCH', 'DELETE']
     queryset = Project.objects.all()
     # serializer_class = ProjectListSerializer
-    serializer_detail_class =  ProjectSerializer
+    # serializer_detail_class =  ProjectSerializer
     serializer_class =  ProjectSerializer
     permission_classes = [permissions.IsAuthenticated,IsAdminOrReadOnly]
     filter_class = ProjectFilter
+
+    def get_serializer(self, *args, **kwargs):
+        serializer = super().get_serializer(*args, **kwargs)
+
+        # Only do this for HTML browsable API
+        if self.request.accepted_renderer.format == 'html':
+            instance = serializer.instance
+            if instance:
+                pe = ProjectEntity.objects.filter(project=instance).first()
+                if pe:
+                    serializer.fields['document_approver_input'].initial = pe.document_approver.id
+                    serializer.fields['primary_contact_input'].initial = (
+                        pe.primary_contact.id if pe.primary_contact else None
+                    )
+
+        return serializer
 
     @action(detail=False, methods=['get'], filter_class=ProjectFilter)
     def count(self, request, pk=None):
@@ -899,17 +915,17 @@ class ProjectViewSet(DetailSerializerMixin,LoggingMixin,viewsets.ModelViewSet):
     #         except Exception as e:
     #             raise ValidationError({"error": f"Error creating ProjectEntity: {str(e)}"})
 
-    def retrieve(self, request, *args, **kwargs):
-        try:
-            project_id = kwargs.get('pk')  
-            project = Project.objects.get(id=project_id)
-            serializer = ProjectSerializer(
-                project,
-                context={'request': request}
-            )
-            return Response(serializer.data)
-        except:
-            return None
+    # def retrieve(self, request, *args, **kwargs):
+    #     try:
+    #         project_id = kwargs.get('pk')  
+    #         project = Project.objects.get(id=project_id)
+    #         serializer = ProjectSerializer(
+    #             project,
+    #             context={'request': request}
+    #         )
+    #         return Response(serializer.data)
+    #     except:
+    #         return None
         
     @action(detail=False, methods=['get'])
     def get_projects(self,request):
