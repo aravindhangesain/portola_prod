@@ -267,14 +267,24 @@ class DocumentSerializer(serializers.HyperlinkedModelSerializer):
     def get_entity_display_name(self, obj):
         return obj.entity.display_name
 
-    # This is very wrong:
-    def get_disclosure(self,obj):
-        # print('IN DISCLOSURE')
-        if self.context.get('request').user.is_superuser:
+    # # This is very wrong:
+    # def get_disclosure(self,obj):
+    #     # print('IN DISCLOSURE')
+    #     if self.context.get('request').user.is_superuser:
+    #         return obj.disclosure
+    #     if obj.disclosure == 'PENDING':
+    #         if self.context.get('request').user != obj.project.document_approver:
+    #             return None
+    #     return obj.disclosure
+
+    def get_disclosure(self, obj):
+        user = self.context.get('request').user
+        if user.is_superuser:
             return obj.disclosure
+        project_entities = ProjectEntity.objects.filter(project_id=obj.project_id)
+        approvers = [pe.document_approver for pe in project_entities if pe.document_approver]
         if obj.disclosure == 'PENDING':
-            if self.context.get('request').user != obj.project.document_approver:
-                return None
+            return obj.disclosure if user in approvers else None
         return obj.disclosure
 
     def get_name(self, obj):
