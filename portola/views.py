@@ -53,6 +53,8 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.renderers import BrowsableAPIRenderer
 from rest_framework.decorators import api_view, parser_classes
 from rest_framework.parsers import MultiPartParser, FormParser
+import django_filters
+from django_filters import rest_framework as filters
 
 
 DAYS_NEW=30
@@ -203,7 +205,12 @@ class CompanyViewSet(LoggingMixin, viewsets.ModelViewSet):
     # permissions incorrect
     # admin for POST/PUT/PATCH
     # authenticated for view`
+class DocumentFilter(filters.FilterSet):
+    project__number = django_filters.CharFilter(field_name="project__number")
 
+    class Meta:
+        model = Document
+        fields = ["project__number"]
 class DocumentViewSet(
     # TransferEmptyNoneMixin,
     LoggingMixin, viewsets.ModelViewSet):
@@ -241,6 +248,8 @@ class DocumentViewSet(
     parser_class = (FileUploadParser,)
     serializer_class = DocumentSerializer
     filter_class = DocumentFilter
+    filter_backends = (filters.DjangoFilterBackend,)
+    filterset_class = DocumentFilter
     # filter_backends = [filters.OrderingFilter,RestFrameworkFilterBackend]
     ordering_fields = '__all__'
     empty_to_none_fields = ("factory_witness_date",)
@@ -583,7 +592,12 @@ class DocumentViewSet(
 
 
 
+class EntityFilter(django_filters.FilterSet):
+    display_name = django_filters.CharFilter(field_name="display_name")
 
+    class Meta:
+        model = Entity
+        fields = ["display_name"]
 
 class EntityViewSet(LoggingMixin, viewsets.ModelViewSet):
     """
@@ -607,6 +621,8 @@ class EntityViewSet(LoggingMixin, viewsets.ModelViewSet):
     serializer_class = EntityListSerializer
     permission_classes = [permissions.IsAuthenticated,IsAdminOrReadOnly]
     filter_class = EntityFilter
+    filter_backends = (filters.DjangoFilterBackend,)
+    filterset_class = EntityFilter
 
     @action(detail=False, methods=['get','post'],serializer_class=EntitySerializer,
     permission_classes=[permissions.IsAuthenticated,],)
@@ -880,6 +896,13 @@ class ProfileViewSet(LoggingMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
+class ProjectFilter(django_filters.FilterSet):
+
+    number = django_filters.CharFilter(field_name="number")
+
+    class Meta:
+        model = Project
+        fields = ["number"]
 class ProjectViewSet(LoggingMixin,viewsets.ModelViewSet):
     """
     This viewset automatically provides `list`, `create`, `retrieve`,
@@ -903,6 +926,8 @@ class ProjectViewSet(LoggingMixin,viewsets.ModelViewSet):
     serializer_class =  ProjectSerializer
     permission_classes = [permissions.IsAuthenticated,IsAdminOrReadOnly]
     filter_class = ProjectFilter
+    filter_backends = (filters.DjangoFilterBackend,)
+    filterset_class = ProjectFilter
 
     def get_serializer(self, *args, **kwargs):
         serializer = super().get_serializer(*args, **kwargs)
