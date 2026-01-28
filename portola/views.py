@@ -41,6 +41,8 @@ from rest_framework.status import (
     HTTP_200_OK,
 )
 from rest_framework.response import Response
+from rest_framework.fields import BooleanField
+
 
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
@@ -49,7 +51,8 @@ from io import BytesIO
 import pandas as pd
 from rest_framework.exceptions import ValidationError
 from rest_framework.renderers import BrowsableAPIRenderer
-
+from rest_framework.decorators import api_view, parser_classes
+from rest_framework.parsers import MultiPartParser, FormParser
 
 
 DAYS_NEW=30
@@ -234,7 +237,7 @@ class DocumentViewSet(
     ?filters=%28tags__title__in%253D1000V%29%26%28tags__title__in%253D260W%29
     """
     logging_methods = ['POST', 'PUT', 'PATCH', 'DELETE','GET']
-    queryset = Document.objects.all()
+    queryset = Document.objects.all().order_by('-created')
     parser_class = (FileUploadParser,)
     serializer_class = DocumentSerializer
     filter_class = DocumentFilter
@@ -509,6 +512,78 @@ class DocumentViewSet(
             return result
         except Exception as e:
             return Document.objects.none()
+        
+    @action(detail=False, methods=['post'])
+    def update_document_details(self, request):
+        import json
+
+        def parse_value(value):
+            if not isinstance(value, str):
+                return value
+            try:
+                return json.loads(value)
+            except:
+                return value  
+
+        data = {key: parse_value(value) for key, value in request.data.items()}
+
+        document_id = data.get("document_id")
+        title = data.get("title")
+        project_url = data.get("project")
+        entity_url = data.get("entity")
+        issued_date = data.get("issued_date")
+        factory_witness_date = data.get("factory_witness_date")
+        product_type = data.get("product_type")
+        doc_type = data.get("type")
+        bom = data.get("bom")
+        technology_tags = data.get("technology_tags", [])
+        file=request.FILES.get('file')
+
+
+        document_instance = Document.objects.get(id=document_id)
+
+        document_instance.technology_tags.clear()
+
+        if isinstance(technology_tags, list):
+            for tag_title in technology_tags:
+                tag = TechnologyTag.objects.get(title=tag_title)
+                document_instance.technology_tags.add(tag)
+
+        if project_url:
+            project_id = int(project_url.rstrip("/").split("/")[-1])
+            project = Project.objects.get(id=project_id)
+            document_instance.project = project
+
+        if entity_url:
+            entity_id = int(entity_url.rstrip("/").split("/")[-1])
+            entity = Entity.objects.get(id=entity_id)
+            document_instance.entity = entity
+
+        document_instance.title = title
+        document_instance.issued_date = issued_date
+        document_instance.factory_witness_date = factory_witness_date
+        document_instance.product_type = product_type
+        document_instance.type = doc_type
+        document_instance.bom = bom
+
+        if file:
+            document_instance.file=file
+            document_instance.name=file.name
+
+        document_instance.save()
+
+        serializer = DocumentSerializer(document_instance, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+        
+        
+
+
+
+
+
+
 
 class EntityViewSet(LoggingMixin, viewsets.ModelViewSet):
     """
@@ -638,6 +713,32 @@ class EntityViewSet(LoggingMixin, viewsets.ModelViewSet):
             return Response(result, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"detail": str(e)},status=status.HTTP_400_BAD_REQUEST)
+        
+    @action(detail=False, methods=['post'], serializer_class=EntitySerializer)
+    def update_entity_details(self, request):
+        entity_id=request.data.get('entity_id')
+        company_url=request.data.get('company')
+        public_val = request.data.get('public')
+        if company_url:
+            url_var = company_url.rstrip("/").split("/")[-1]
+            company_id = int(url_var)
+            company=Company.objects.get(id=company_id)
+
+        entity=Entity.objects.get(id=entity_id)
+
+        entity.company=company
+        entity.type=request.data.get('type')
+        entity.company_type=request.data.get('company_type')
+        entity.legal_name=request.data.get('legal_name')
+        entity.display_name=request.data.get('display_name')
+        entity.website=request.data.get('website')
+        entity.country=request.data.get('country')
+        entity.public = BooleanField().to_internal_value(public_val)
+        entity.save()
+
+        serializer = EntitySerializer(entity, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
 
 
 class FaqViewSet(LoggingMixin, viewsets.ModelViewSet):
@@ -891,6 +992,88 @@ class ProjectViewSet(LoggingMixin,viewsets.ModelViewSet):
             queryset.save()
         serializer = ProjectFollowSerializer(queryset, many=False, context=self.context)
         return Response(serializer.data)
+    
+    @action(detail=False, methods=['post'], serializer_class=ProjectSerializer)
+    def update_project_details(self, request):
+
+        try:
+            project_id = request.data.get("project_id")
+            if not project_id:
+                return Response({"error": "Project id is required"}, status=400)
+
+            # Fetch project
+            try:
+                project = Project.objects.get(id=project_id)
+            except Project.DoesNotExist:
+                return Response({"error": "Project not found"}, status=404)
+
+            # Extract fields
+            number = request.data.get("number")
+            status_val = request.data.get("status")
+            salesforce_id = request.data.get("salesforce_id")
+            name = request.data.get("name")
+            type_val = request.data.get("type")
+            contract_signature = request.data.get("contract_signature")
+            pvel_manager_url = request.data.get("pvel_manager")
+            pvel_manager_instance = None
+
+            if pvel_manager_url:
+                try:
+                    # Extract ID from URL
+                    user_id = pvel_manager_url.rstrip("/").split("/")[-1]
+                    user_id = int(user_id)
+
+                    # Get User instance
+                    from django.contrib.auth import get_user_model
+                    User = get_user_model()
+                    pvel_manager = User.objects.get(id=user_id)
+
+                except Exception as e:
+                    return Response({"error": f"Invalid pvel_manager URL: {str(e)}"}, status=400)
+
+            customers = request.data.get("customers", [])
+
+            # Convert customers JSON string → list (if needed)
+            if isinstance(customers, str):
+                import json
+                customers = json.loads(customers)
+
+            # ------------------------------------------
+            # UPDATE PROJECT (except customers)
+            # ------------------------------------------
+            project.number = number
+            project.status = status_val
+            project.salesforce_id = salesforce_id
+            project.name = name
+            project.type = type_val
+            project.contract_signature = contract_signature
+            project.pvel_manager = pvel_manager
+            project.save()
+
+            # ------------------------------------------
+            # UPDATE PROJECT ENTITIES
+            # ------------------------------------------
+            with transaction.atomic():
+                # delete existing linked rows
+                ProjectEntity.objects.filter(project=project).delete()
+
+                # insert new rows
+                for cust in customers:
+                    ProjectEntity.objects.create(
+                        project=project,
+                        customer_id=cust.get("customer_id"),
+                        document_approver_id=cust.get("document_approver_id"),
+                        primary_contact_id=cust.get("primary_contact_id")
+                    )
+
+            serializer = ProjectSerializer(project, context={'request': request})
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
+
 
     # def perform_create(self, serializer):
     #     instance = serializer.save()
@@ -1387,6 +1570,3 @@ class ProjectTemplateViewSet(viewsets.ModelViewSet):
 class EntityTemplateViewSet(viewsets.ModelViewSet):
     queryset=EntityTemplate.objects.all()
     serializer_class=EntityTemplateSerializer
-
-
-    

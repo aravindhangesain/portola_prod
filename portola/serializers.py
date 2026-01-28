@@ -232,6 +232,7 @@ class DocumentSerializer(serializers.HyperlinkedModelSerializer):
     requests = serializers.SerializerMethodField()
     name = serializers.SerializerMethodField()
     disclosure = serializers.SerializerMethodField()
+    # product_type = serializers.SerializerMethodField()
 
     # TODO: This isn't perfect yet, but I like it better
     # def create(self, validated_data):
@@ -251,6 +252,9 @@ class DocumentSerializer(serializers.HyperlinkedModelSerializer):
     def to_representation(self, instance):
         """Convert `file location` to download URL."""
         ret = super().to_representation(instance)
+        # Change the product type to lowercase
+        if ret.get("product_type"):
+            ret["product_type"] = ret["product_type"].lower()
         ret['file'] = ret['url'] + 'download/'
         return ret
 
@@ -309,6 +313,7 @@ class DocumentSerializer(serializers.HyperlinkedModelSerializer):
         # 'owner',
         'name',
         'title',
+        'entity_id',
         'entity',
         'entity_display_name',
         'issued_date',
@@ -591,6 +596,7 @@ class ProjectSerializer(serializers.HyperlinkedModelSerializer):
     followers = serializers.SerializerMethodField()
     following = serializers.SerializerMethodField()
     customer_name = serializers.SerializerMethodField()
+    customer = serializers.SerializerMethodField()
     primary_contact_id = serializers.SerializerMethodField()
     primary_contact = serializers.SerializerMethodField()
     primary_contact_user = serializers.SerializerMethodField()
@@ -601,6 +607,10 @@ class ProjectSerializer(serializers.HyperlinkedModelSerializer):
     pvel_manager_name = serializers.SerializerMethodField()
     last_document_date = serializers.SerializerMethodField()
     document_approver = serializers.SerializerMethodField()
+    custom_response = serializers.SerializerMethodField()  
+    document_approver_details = serializers.SerializerMethodField()
+    primary_contact_details = serializers.SerializerMethodField()
+    document_approver_id = serializers.SerializerMethodField()
 
     # HTML FORM — Multiselect dropdown
     customer_ids = serializers.PrimaryKeyRelatedField(
@@ -791,11 +801,100 @@ class ProjectSerializer(serializers.HyperlinkedModelSerializer):
     # --------------------------------------------------------
     # Representation methods (unchanged)
     # --------------------------------------------------------
+    def get_document_approver_details(self, obj):
+        try:
+            # Get lists from your existing functions
+            ids = self.get_document_approver_id(obj)
+            urls = self.get_document_approver(obj)
+            users = self.get_document_approver_user(obj)
+            names = self.get_document_approver_name(obj)
+
+            # Combine them into an array of objects
+            approvers = []
+            for approver_id, approver_url, approver_user, approver_name in zip(ids, urls, users, names):
+                approvers.append({
+                    "document_approver_id": approver_id,
+                    "document_approver": approver_url,
+                    "document_approver_user": approver_user,
+                    "document_approver_name": approver_name
+                })
+
+            return approvers
+
+        except Exception as e:
+            print("Error combining approver data:", e)
+            return []
+        
+    def get_primary_contact_details(self, obj):
+        try:
+            ids = self.get_primary_contact_id(obj)
+            urls = self.get_primary_contact(obj)
+            users = self.get_primary_contact_user(obj)
+            names = self.get_primary_contact_name(obj)
+
+            # Combine them into an array of objects
+            primary_contact = []
+            for primary_contact_id, primary_contact_url, primary_contact_user, primary_contact_name in zip(ids, urls, users, names):
+                primary_contact.append({
+                    "document_approver_id": primary_contact_id,
+                    "document_approver": primary_contact_url,
+                    "document_approver_user": primary_contact_user,
+                    "document_approver_name": primary_contact_name
+                })
+
+            return primary_contact
+
+        except Exception as e:
+            print("Error combining approver data:", e)
+            return []
+        
+    def get_custom_response(self, obj):
+        try:
+            project_entities = ProjectEntity.objects.filter(project_id=obj.id)
+            result = []
+
+            for pe in project_entities:
+                result.append({
+                    "customer_id": pe.customer.id if pe.customer else None,
+                    "document_approver_id": pe.document_approver.id if pe.document_approver else None,
+                    "primary_contact_id":pe.primary_contact.id if pe.primary_contact else None
+                })
+
+            return result
+        except Exception as e:
+            print(f"Error in get_custom_response: {e}")
+            return []
+        
     def get_customer_name(self, obj):
         try:
             project_entity = ProjectEntity.objects.filter(project_id=obj.id)
             return [pe.customer.display_name for pe in project_entity]
         except:
+            return []
+        # try:
+        #     project_entities = ProjectEntity.objects.filter(project_id=obj.id)
+        #     cust_array = [
+        #         f"https://portolaprod.azurewebsites.net/api/entities/{pe.customer.id}"
+        #         for pe in project_entities if pe.customer
+        #     ]
+        #     return cust_array
+        # except Exception as e:
+        #     return []
+        
+    def get_customer(self, obj):
+        try:
+            customer_ids = ProjectEntity.objects.filter(
+                project_id=obj.id
+            ).values_list('customer_id', flat=True)
+            customers = Entity.objects.filter(id__in=customer_ids)
+            serializer = EntityListSerializer(
+                customers,
+                many=True,
+                context={'request': self.context.get('request')}
+            )
+            return serializer.data
+        except Exception as e:
+            print(f"Error in get_customer: {e}")
             return []
 
     def get_primary_contact_id(self, obj):
@@ -825,6 +924,17 @@ class ProjectSerializer(serializers.HyperlinkedModelSerializer):
             for pe in ProjectEntity.objects.filter(project_id=obj.id)
             if pe.primary_contact
         ]
+    
+    def get_document_approver_id(self, obj):
+        try:
+            project_entities = ProjectEntity.objects.filter(project_id=obj.id)
+            approver_ids = [
+                pe.document_approver.id
+                for pe in project_entities if pe.document_approver
+            ]
+            return approver_ids
+        except Exception as e:
+            return []
 
     def get_document_approver(self, obj):
         return [
@@ -881,18 +991,18 @@ class ProjectSerializer(serializers.HyperlinkedModelSerializer):
         model = Project
         fields = (
             'id', 'url', 'number', 'status',
-            'salesforce_id', 'name',
-            'document_approver', 'document_approver_user', 'document_approver_name',
-            'customer_name', 'following', 'type', 'type_text',
+            'salesforce_id', 'name', 'document_approver_id',
+            'document_approver', 'document_approver_user', 'document_approver_name','document_approver_details',
+            'customer_name','customer', 'following', 'type', 'type_text',
             'contract_signature', 'last_document_date',
             'primary_contact', 'primary_contact_id', 'primary_contact_user',
-            'primary_contact_name', 'pvel_manager', 'pvel_manager_user',
+            'primary_contact_name', 'primary_contact_details','pvel_manager', 'pvel_manager_user',
             'pvel_manager_name', 'followers', 'document_project',
 
             'customers',          
             'customer_ids',
             'document_approver_input',
-            'primary_contact_input',
+            'primary_contact_input','custom_response',
         )
 
 class PVModelSerializer(serializers.HyperlinkedModelSerializer):
@@ -1209,7 +1319,7 @@ class ProjectTemplateSerializer(serializers.HyperlinkedModelSerializer):
         except Exception as e:
             return []
     
-    def get_customer(self, obj):
+    def get_customer(self, obj): 
         try:
             customer_ids = ProjectEntityTemplate.objects.filter(
                 projecttemplate_id=obj.id
